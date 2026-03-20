@@ -24,6 +24,7 @@ func main() {
 	username, err := gamelogic.ClientWelcome()
 	if err != nil {
 		fmt.Printf("error setting username: %s", err)
+		return
 	}
 
 	state := gamelogic.NewGameState(username)
@@ -42,6 +43,21 @@ func main() {
 		fmt.Printf("could not subscribe to pause: %s", err)
 	}
 
+	err = pubsub.SubscribeJSON(
+		conn,
+		routing.ExchangePerilTopic,
+		routing.ArmyMovesPrefix+"."+state.GetUsername(),
+		routing.ArmyMovesPrefix+".*",
+		pubsub.SimpleQueueTransient,
+		handlerArmyMoves(state),
+	)
+
+	ch, err := conn.Channel()
+	if err != nil {
+		fmt.Printf("error opening channe: %s", err)
+		return
+	}
+
 	for {
 		input := gamelogic.GetInput()
 		if len(input) == 0 {
@@ -54,11 +70,21 @@ func main() {
 				fmt.Printf("error: %s", err)
 			}
 		case "move":
-			_, err := state.CommandMove(input)
+			move, err := state.CommandMove(input)
 			if err != nil {
 				fmt.Printf("error: %s", err)
 			}
-			fmt.Println("move recorded")
+			err = pubsub.PublishJSON(
+				ch,
+				routing.ExchangePerilTopic,
+				routing.ArmyMovesPrefix+"."+state.GetUsername(),
+				move,
+			)
+			if err != nil {
+				fmt.Printf("error: %s", err)
+			} else {
+				fmt.Println("move published")
+			}
 		case "status":
 			state.CommandStatus()
 		case "help":
