@@ -2,6 +2,8 @@ package main
 
 import (
 	"fmt"
+	"strconv"
+	"time"
 
 	"github.com/jijohn-dev/peril/internal/gamelogic"
 	"github.com/jijohn-dev/peril/internal/pubsub"
@@ -43,20 +45,29 @@ func main() {
 		fmt.Printf("could not subscribe to pause: %s", err)
 	}
 
+	ch, err := conn.Channel()
+	if err != nil {
+		fmt.Printf("error opening channe: %s", err)
+		return
+	}
+
 	err = pubsub.SubscribeJSON(
 		conn,
 		routing.ExchangePerilTopic,
 		routing.ArmyMovesPrefix+"."+state.GetUsername(),
 		routing.ArmyMovesPrefix+".*",
 		pubsub.SimpleQueueTransient,
-		handlerArmyMoves(state),
+		handlerArmyMoves(state, ch),
 	)
 
-	ch, err := conn.Channel()
-	if err != nil {
-		fmt.Printf("error opening channe: %s", err)
-		return
-	}
+	err = pubsub.SubscribeJSON(
+		conn,
+		routing.ExchangePerilTopic,
+		routing.WarRecognitionsPrefix,
+		routing.WarRecognitionsPrefix+".*",
+		pubsub.SimpleQueueDurable,
+		handlerMakeWar(state, ch),
+	)
 
 	for {
 		input := gamelogic.GetInput()
@@ -84,6 +95,29 @@ func main() {
 				fmt.Printf("error: %s", err)
 			} else {
 				fmt.Println("move published")
+			}
+		case "spam":
+			if len(input) < 2 {
+				fmt.Println("no argument provided")
+			}
+			num, err := strconv.Atoi(input[1])
+			if err != nil {
+				fmt.Printf("error: %s", err)
+			} else {
+				for range num {
+					msg := gamelogic.GetMaliciousLog()
+					log := routing.GameLog{
+						CurrentTime: time.Now(),
+						Message:     msg,
+						Username:    state.GetUsername(),
+					}
+					pubsub.PublishGob(
+						ch,
+						routing.ExchangePerilTopic,
+						routing.GameLogSlug+"."+state.GetUsername(),
+						log,
+					)
+				}
 			}
 		case "status":
 			state.CommandStatus()

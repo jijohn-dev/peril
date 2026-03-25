@@ -21,8 +21,19 @@ func main() {
 	defer conn.Close()
 
 	channel, err := conn.Channel()
-	routingKey := routing.GameLogSlug + ".*"
-	_, _, err = pubsub.DeclareAndBind(conn, routing.ExchangePerilTopic, "game_logs", routingKey, pubsub.SimpleQueueDurable)
+
+	err = pubsub.SubscribeGob(
+		conn,
+		routing.ExchangePerilTopic,
+		routing.GameLogSlug,
+		routing.GameLogSlug+".*",
+		pubsub.SimpleQueueDurable,
+		handlerLog(),
+	)
+
+	if err != nil {
+		fmt.Printf("error subscribing to game logs: %s\n", err)
+	}
 
 	fmt.Println("Connected to RabbitMQ")
 	gamelogic.PrintServerHelp()
@@ -34,10 +45,22 @@ func main() {
 		}
 		if input[0] == "pause" {
 			fmt.Println("sending pause message")
-			pubsub.PublishJSON(channel, routing.ExchangePerilDirect, routing.PauseKey, routing.PlayingState{IsPaused: true})
+			pubsub.PublishJSON(channel,
+				routing.ExchangePerilDirect,
+				routing.PauseKey,
+				routing.PlayingState{
+					IsPaused: true,
+				},
+			)
 		} else if input[0] == "resume" {
 			fmt.Println("sending resume message")
-			pubsub.PublishJSON(channel, routing.ExchangePerilDirect, routing.PauseKey, routing.PlayingState{IsPaused: false})
+			pubsub.PublishJSON(channel,
+				routing.ExchangePerilDirect,
+				routing.PauseKey,
+				routing.PlayingState{
+					IsPaused: false,
+				},
+			)
 		} else if input[0] == "quit" {
 			fmt.Println("Shutting down...")
 			break
